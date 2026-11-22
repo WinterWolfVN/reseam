@@ -42,18 +42,26 @@ jobs:
 
       - name: Patch mallopt and getParameterCount
         run: |
-                find . -name "*.rs" -exec sed -i 's/mallopt(M_PURGE, 0);/let s = libc::dlsym(libc::RTLD_DEFAULT, b"mallopt\\0".as_ptr() as *const _); if !s.is_null() { let f: unsafe extern "C" fn(libc::c_int, libc::c_int) -> libc::c_int = std::mem::transmute(s); f(M_PURGE, 0); }/g' {} +
+                find . -name "*.rs" -exec sed -i 's/mallopt(M_PURGE, 0);/let _ = M_PURGE;/g' {} +
                 find . -name "*.rs" -exec sed -z -i -E 's/env\s*\.call_method\(member,\s*jni_str!\("getParameterCount"\),\s*jni_sig!\("\(\)I"\),\s*&\[\]\)\s*\.and_then\(JValueOwned::i\)\?/{\n            let pts = env.call_method(member, jni_str!("getParameterTypes"), jni_sig!("()[Ljava\/lang\/Class;"), \&[]).and_then(JValueOwned::l)?;\n            env.get_array_length((\&pts).into())?\n        }/g' {} +
-
+        
       - run: just check
 
       - run: just release ${{ inputs.version }}
+
+      - name: Collect SO files from Cargo cache
+        run: |
+                mkdir -p so-out
+                for f in $(find /cache/target . -name "libreseam-sdk-native.so" 2>/dev/null); do
+                    arch=$(basename $(dirname $(dirname "$f")))
+                    mkdir -p "so-out/$arch"
+                    cp -f "$f" "so-out/$arch/libreseam-sdk-native.so"
+                done
 
       - name: Upload SO files to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
                 name: Reseam-Native-SO
                 path: |
-                      **/libreseam-sdk-native.so
-                      **/*.so                    
-                if-no-files-found: ignore
+                      so-out/**
+                      **/*.so
