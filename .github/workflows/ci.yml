@@ -1,9 +1,13 @@
 name: ci
 
 on:
-  push:
-    tags: ['v*']
-
+  workflow_dispatch: 
+    inputs:
+      version:
+        description: "Releases version:"
+        required: true
+        type: string
+  
 concurrency:
   group: ci
 
@@ -17,22 +21,7 @@ jobs:
         - reseam-ci:/cache
     env:
       CARGO_TARGET_DIR: /cache/target
-      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
-      MIRROR_RELEASE_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
-      AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
-      AWS_REGION: auto
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      FORGEJO_PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
-      BUNDLE_SIGNING_KEY_B64: ${{ secrets.BUNDLE_SIGNING_KEY_B64 }}
-      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-      RESEAM_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      RESEAM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      RESEAM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      GMSCORE_KEYSTORE_B64: ${{ secrets.GMSCORE_KEYSTORE_B64 }}
-      GMSCORE_KEYSTORE_PASSWORD: ${{ secrets.GMSCORE_KEYSTORE_PASSWORD }}
-      GMSCORE_KEY_ALIAS: ${{ secrets.GMSCORE_KEY_ALIAS }}
-      GMSCORE_KEY_PASSWORD: ${{ secrets.GMSCORE_KEY_PASSWORD }}
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}     
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,6 +40,20 @@ jobs:
           key: deps-${{ hashFiles('**/Cargo.lock', '**/*.gradle.kts', '**/libs.versions.toml', '**/bun.lock', '**/package-lock.json') }}
           restore-keys: deps-
 
+      - name: Patch mallopt and getParameterCount
+        run: |
+                find . -name "*.rs" -exec sed -i 's/mallopt(M_PURGE, 0);/let s = libc::dlsym(libc::RTLD_DEFAULT, b"mallopt\\0".as_ptr() as *const _); if !s.is_null() { let f: unsafe extern "C" fn(libc::c_int, libc::c_int) -> libc::c_int = std::mem::transmute(s); f(M_PURGE, 0); }/g' {} +
+                find . -name "*.rs" -exec sed -z -i -E 's/env\s*\.call_method\(member,\s*jni_str!\("getParameterCount"\),\s*jni_sig!\("\(\)I"\),\s*&\[\]\)\s*\.and_then\(JValueOwned::i\)\?/{\n            let pts = env.call_method(member, jni_str!("getParameterTypes"), jni_sig!("()[Ljava\/lang\/Class;"), \&[]).and_then(JValueOwned::l)?;\n            env.get_array_length((\&pts).into())?\n        }/g' {} +
+
       - run: just check
 
-      - run: just release ${{ github.ref_name }}
+      - run: just release ${{ inputs.version }}
+
+      - name: Upload SO files to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+                name: Reseam-Native-SO
+                path: |
+                      **/libreseam-sdk-native.so
+                      **/*.so                    
+                if-no-files-found: ignore
