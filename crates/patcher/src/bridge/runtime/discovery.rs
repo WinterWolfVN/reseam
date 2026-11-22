@@ -92,13 +92,15 @@ fn indexed<'d>(
     seen: &mut HashSet<usize>,
 ) -> Result<Option<&'d Declaration>> {
     if kind == MemberKind::Method
-        && env
-            .call_method(member, jni_str!("getParameterCount"), jni_sig!("()I"), &[])
-            .and_then(JValueOwned::i)?
-            != 0
+        && {
+            let pts = env
+                .call_method(member, jni_str!("getParameterTypes"), jni_sig!("()[Ljava/lang/Class;"), &[])
+                .and_then(JValueOwned::l)?;
+            env.get_array_length((&pts).into())?
+        } != 0
     {
         return Ok(None);
-    }
+        }
     let owner = object(env, member, "getDeclaringClass", "()Ljava/lang/Class;")?;
     let name = string(env, member, "getName")?;
     let owner = string(env, &owner, "getName")?;
